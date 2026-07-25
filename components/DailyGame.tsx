@@ -4,7 +4,7 @@ import {
   Flame, Brain, Lightbulb, Check, X, Mic, Share2, Sparkles, Send, Eye, Trophy, Plus, Target,
   UserRound,
 } from "lucide-react";
-import type { PublicPuzzle, Profile, RevealResult, AuthInfo } from "@/lib/types";
+import type { PublicPuzzle, Profile, RevealResult, AuthInfo, CheckResult } from "@/lib/types";
 import {
   ensureGuest, getTodayPuzzle, getProfile, askOracle, matchAngles, checkDaily, revealPuzzle,
   getAuthInfo, onAuthChange,
@@ -38,6 +38,9 @@ export default function DailyGame() {
   const [revealed, setRevealed] = useState(false);
   const [reveal, setReveal] = useState<RevealResult | null>(null);
   const [lastCorrect, setLastCorrect] = useState<boolean | null>(null);
+  const [result, setResult] = useState<CheckResult | null>(null);
+  const [wrongSubmits, setWrongSubmits] = useState(0);
+  const startRef = useRef<number>(0);
 
   // lateral
   const [log, setLog] = useState<{ q: string; a: string; hit: boolean }[]>([]);
@@ -63,6 +66,7 @@ export default function DailyGame() {
         setPuzzle(pz);
         setProfile(pr);
         setAuth(au);
+        startRef.current = Date.now();
         if (pz && pz.payload.kind === "lateral") setClueCover(pz.payload.clues.map(() => false));
       } catch (e) { console.error(e); }
       setLoading(false);
@@ -90,6 +94,11 @@ export default function DailyGame() {
 
   const isSolved = revealed;
 
+  /** Grading meta sent with every attempt — the server computes the score from it. */
+  function meta() {
+    return { hints: hintLevel, timeMs: Date.now() - startRef.current };
+  }
+
   // ---- lateral ----
   async function ask(text: string) {
     if (!puzzle || !text.trim()) return;
@@ -99,14 +108,30 @@ export default function DailyGame() {
     if (r.clueHits?.length) {
       setClueCover((c) => c.map((v, i) => v || r.clueHits.includes(i)));
     }
-    if (r.solved) {
-      await checkDaily(puzzle.id, { solved: true, coverage: clueCover.filter(Boolean).length, hints: hintLevel });
+    if (r.solved) await submitLateral(text, log.length + 1);   // named it inside the question
+  }
+  /** The "Name it" submission — graded server-side against the solve words. */
+  async function submitLateral(text: string, questions?: number): Promise<boolean> {
+    if (!puzzle || !text.trim()) return false;
+    const res = await checkDaily(puzzle.id, {
+      text, questions: questions ?? log.length,
+      coverage: clueCover.filter(Boolean).length, ...meta(),
+    });
+    if (res.correct) {
+      setResult(res);
+      setLastCorrect(true);
       await doReveal();
+      return true;
     }
+    setWrongSubmits((w) => w + 1);
+    return false;
   }
   async function lateralGiveUp() {
     if (!puzzle) return;
-    await checkDaily(puzzle.id, { solved: true, hints: hintLevel });
+    await checkDaily(puzzle.id, {
+      text: "", questions: log.length,
+      coverage: clueCover.filter(Boolean).length, ...meta(),
+    });
     await doReveal();
   }
 
@@ -114,32 +139,35 @@ export default function DailyGame() {
   async function pick(i: number) {
     if (!puzzle || chosen !== null) return;
     setChosen(i);
-    const res = await checkDaily(puzzle.id, { choice: i, hints: hintLevel });
+    const res = await checkDaily(puzzle.id, { choice: i, ...meta() });
     setLastCorrect(res.correct);
+    if (res.correct) setResult(res);
     await doReveal();
   }
 
   // ---- fermi ----
-  async function lockFermi(result: number) {
+  async function lockFermi(value: number) {
     if (!puzzle) return;
-    setGuess(String(result));
+    setGuess(String(value));
     setLocked(true);
-    const res = await checkDaily(puzzle.id, { value: result, hints: hintLevel });
+    const res = await checkDaily(puzzle.id, { value, ...meta() });
     setLastCorrect(res.correct);
+    if (res.correct) setResult(res);
     await doReveal();
   }
 
   // ---- deduction ----
   async function checkDeduction() {
     if (!puzzle) return;
-    const res = await checkDaily(puzzle.id, { text: guess, hints: hintLevel });
+    const res = await checkDaily(puzzle.id, { text: guess, ...meta() });
     setLocked(true);
     setLastCorrect(res.correct);
-    if (res.correct) await doReveal();
+    if (res.correct) { setResult(res); await doReveal(); }
+    else setWrongSubmits((w) => w + 1);
   }
   async function deductionGiveUp() {
     if (!puzzle) return;
-    await checkDaily(puzzle.id, { text: "", hints: hintLevel });
+    await checkDaily(puzzle.id, { text: "", ...meta() });
     await doReveal();
   }
 
@@ -152,7 +180,7 @@ export default function DailyGame() {
   }
   async function openReveal() {
     if (!puzzle) return;
-    await checkDaily(puzzle.id, { solved: true, coverage: covered.length, angles: covered, hints: hintLevel });
+    await checkDaily(puzzle.id, { solved: true, coverage: covered.length, angles: covered, ...meta() });
     await doReveal();
   }
   function voiceDemo() {
@@ -161,9 +189,15 @@ export default function DailyGame() {
     setTimeout(() => { setListening(false); addAngle("waiting feels boring, it's not really speed"); }, 1100);
   }
 
+  const finalScore = result?.score ?? reveal?.myScore ?? null;
+  const finalTopPct = result?.topPct ?? reveal?.myTopPct ?? null;
+  const solvesToday = result?.solves ?? reveal?.stats?.solves ?? null;
+
   function copyShare() {
     if (!puzzle?.shareLine) return;
-    const text = puzzle.shareLine.replace("⬛", String(log.length || 1));
+    let text = puzzle.shareLine.replace("⬛", String(log.length || 1));
+    if (finalScore != null)
+      text += ` Score ${finalScore}${finalTopPct != null ? ` · Top ${finalTopPct}%` : ""}.`;
     try { navigator.clipboard?.writeText(text + " Thinking Gym"); } catch {}
     setCopied(true); setTimeout(() => setCopied(false), 1600);
   }
@@ -215,8 +249,9 @@ export default function DailyGame() {
 
           <div className="mt-4">
             {pay.kind === "lateral" && (
-              <LateralInput puzzle={puzzle} pay={pay} log={log} q={q} setQ={setQ} ask={ask}
-                clueCover={clueCover} revealed={revealed} onReveal={lateralGiveUp} logEnd={logEnd} />
+              <LateralInput pay={pay} log={log} q={q} setQ={setQ} ask={ask}
+                clueCover={clueCover} revealed={revealed} onGiveUp={lateralGiveUp}
+                onSubmitAnswer={submitLateral} wrongSubmits={wrongSubmits} logEnd={logEnd} />
             )}
 
             {pay.kind === "spot_flaw" && (
@@ -333,6 +368,16 @@ export default function DailyGame() {
           )}
         </div>
 
+        {/* payoff — score + rank (convergent types, first solve) */}
+        {isSolved && finalScore != null && (
+          <ScoreCard
+            score={finalScore} topPct={finalTopPct} solves={solvesToday}
+            hints={hintLevel} wrong={wrongSubmits}
+            questions={pay.kind === "lateral" ? log.length : 0}
+            timeMs={Date.now() - startRef.current}
+          />
+        )}
+
         {/* solved footer */}
         {isSolved && (
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${LINE}` }}>
@@ -376,56 +421,181 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div style={{ background: PAPER, minHeight: "100vh", color: INK, fontFamily: FONT }}>{children}</div>
   );
 }
+
+/**
+ * The payoff: big score, rank vs today's solvers, and where the points went.
+ * Display mirror of the server formula in 05_scoring.sql — keep in sync.
+ */
+function ScoreCard({ score, topPct, solves, hints, wrong, questions, timeMs }: {
+  score: number; topPct: number | null; solves: number | null;
+  hints: number; wrong: number; questions: number; timeMs: number;
+}) {
+  const qPen = 3 * Math.max(questions - 5, 0);
+  const tPen = Math.min(20, 2 * Math.max(Math.floor(timeMs / 60000) - 3, 0));
+  const lines = [
+    hints > 0 && { label: `${hints} hint${hints > 1 ? "s" : ""} used`, pts: -10 * hints },
+    wrong > 0 && { label: `${wrong} wrong ${wrong > 1 ? "guesses" : "guess"}`, pts: -15 * wrong },
+    qPen > 0 && { label: `${questions} questions (first 5 free)`, pts: -qPen },
+    tPen > 0 && { label: "took your time", pts: -tPen },
+  ].filter(Boolean) as { label: string; pts: number }[];
+  return (
+    <div className="rounded-2xl p-4 mt-3" style={{ background: INK }}>
+      <div className="flex items-center justify-between">
+        <div>
+          <div style={{ color: "#8B8B96", fontSize: 11, fontWeight: 600, letterSpacing: 0.6, textTransform: "uppercase" }}>
+            Today's score
+          </div>
+          <div style={{ color: LIME, fontSize: 40, fontWeight: 700, lineHeight: 1.1 }}>{score}</div>
+        </div>
+        <div className="text-right">
+          {topPct != null && (
+            <div className="rounded-full px-3 py-1.5 inline-block" style={{ background: LIME, color: INK, fontSize: 13, fontWeight: 700 }}>
+              Top {topPct}%
+            </div>
+          )}
+          {solves != null && (
+            <div style={{ color: "#8B8B96", fontSize: 11.5, marginTop: 6 }}>
+              of {solves.toLocaleString()} solvers today
+            </div>
+          )}
+        </div>
+      </div>
+      {lines.length > 0 && (
+        <div className="mt-3 pt-3 flex flex-col gap-1" style={{ borderTop: "1px solid #2B2B36" }}>
+          <div className="flex items-center justify-between">
+            <span style={{ color: "#B9B9C2", fontSize: 12 }}>Clean solve</span>
+            <span style={{ color: "#B9B9C2", fontSize: 12, fontWeight: 600 }}>100</span>
+          </div>
+          {lines.map((l, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <span style={{ color: "#8B8B96", fontSize: 12 }}>{l.label}</span>
+              <span style={{ color: "#E0906B", fontSize: 12, fontWeight: 600 }}>{l.pts}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {lines.length === 0 && (
+        <div className="mt-2" style={{ color: "#B9B9C2", fontSize: 12 }}>
+          Flawless — no hints, no misses. That's the ceiling. 💪
+        </div>
+      )}
+    </div>
+  );
+}
 function Center({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: "80px 20px", textAlign: "center", color: MUTED, fontSize: 14 }}>{children}</div>;
 }
 
-function LateralInput({ puzzle, pay, log, q, setQ, ask, clueCover, revealed, onReveal, logEnd }: any) {
+/**
+ * Two distinct panels: INVESTIGATE (oracle Q&A + adaptive probe chips that steer
+ * toward still-missing facts) and NAME IT (typed answer, graded server-side).
+ */
+function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, onSubmitAnswer, wrongSubmits, logEnd }: any) {
+  const [answer, setAnswer] = useState("");
+  const [missed, setMissed] = useState(false);
   const count = clueCover.filter(Boolean).length;
   const all = count === pay.clues.length && pay.clues.length > 0;
+
+  // Adaptive chips: start with the openers; once facts start landing, surface
+  // probes aimed at the clues still hidden. Never repeat an asked question.
+  const asked = new Set(log.map((e: any) => e.q.trim().toLowerCase()));
+  const fresh = (xs: string[]) => xs.filter((s) => !asked.has(s.trim().toLowerCase()));
+  let chips: string[] =
+    count === 0
+      ? fresh(pay.suggested)
+      : pay.clues.flatMap((_: any, i: number) => (clueCover[i] ? [] : fresh(pay.probes?.[i] ?? [])));
+  if (chips.length === 0) chips = fresh(pay.suggested);
+  chips = chips.slice(0, 4);
+
+  async function submit() {
+    if (!answer.trim()) return;
+    setMissed(false);
+    const ok = await onSubmitAnswer(answer);
+    if (!ok) { setMissed(true); setAnswer(""); }
+  }
+
   return (
     <div>
-      <div style={{ fontSize: 12, color: MUTED, marginBottom: 8 }}>Ask yes/no questions to crack it — the thinking is in the asking.</div>
-      <div className="rounded-xl px-3 py-2.5 mb-2" style={{ background: PAPER }}>
-        <div className="flex items-center justify-between mb-1.5">
-          <span style={{ fontSize: 11, fontWeight: 600, color: "#4A4A52" }}>Key facts uncovered</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: all ? LIME_DK : MUTED }}>{count} / {pay.clues.length}</span>
+      {/* ---- panel 1 · INVESTIGATE ---- */}
+      <div className="rounded-xl p-3 mb-2.5" style={{ background: PAPER, border: `1px solid ${LINE}` }}>
+        <div className="flex items-center justify-between mb-2">
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, color: "#4A4A52", textTransform: "uppercase" }}>
+            🔎 Investigate
+          </span>
+          <span style={{ fontSize: 11, color: MUTED }}>yes/no questions · first 5 free</span>
         </div>
-        <div className="flex flex-col gap-1">
-          {pay.clues.map((c: any, i: number) => (
-            <div key={i} className="flex items-center gap-1.5" style={{ fontSize: 12, color: clueCover[i] ? INK : "#B7B7BE" }}>
-              {clueCover[i] ? <Check size={13} color={LIME_DK} /> : <div style={{ width: 13, height: 13, borderRadius: 8, border: `1.5px solid ${LINE}` }} />}
-              {clueCover[i] ? c.label : "· · · · ·"}
-            </div>
-          ))}
-        </div>
-        {all && !revealed && <div style={{ fontSize: 11.5, color: LIME_DK, marginTop: 6, fontWeight: 600 }}>You've got the key facts — try naming it below.</div>}
-      </div>
-      {log.length > 0 && (
-        <div className="rounded-xl p-2.5 mb-2 flex flex-col gap-2" style={{ background: PAPER, maxHeight: 150, overflowY: "auto" }}>
-          {log.map((e: any, i: number) => (
-            <div key={i}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{e.q}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: e.hit ? LIME_DK : e.a === "Yes" ? "#2FA36B" : e.a === "No" ? "#D6456B" : MUTED }}>→ {e.a}</div>
-            </div>
-          ))}
-          <div ref={logEnd} />
-        </div>
-      )}
-      {!revealed && (
-        <>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {pay.suggested.map((s: string, i: number) => (
-              <button key={i} onClick={() => ask(s)} className="rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: "#3A3A40" }}>{s}</button>
+        <div className="rounded-xl px-3 py-2.5 mb-2" style={{ background: CARD }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#4A4A52" }}>Key facts uncovered</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: all ? LIME_DK : MUTED }}>{count} / {pay.clues.length}</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            {pay.clues.map((c: any, i: number) => (
+              <div key={i} className="flex items-center gap-1.5" style={{ fontSize: 12, color: clueCover[i] ? INK : "#B7B7BE" }}>
+                {clueCover[i] ? <Check size={13} color={LIME_DK} /> : <div style={{ width: 13, height: 13, borderRadius: 8, border: `1.5px solid ${LINE}` }} />}
+                {clueCover[i] ? c.label : "· · · · ·"}
+              </div>
             ))}
           </div>
-          <div className="flex items-center gap-2">
-            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask(q)}
-              placeholder="ask your own yes/no question…" className="rounded-xl px-3.5 py-2.5 flex-1" style={{ border: `1px solid ${LINE}`, fontSize: 14, background: CARD }} />
-            <button onClick={() => ask(q)} className="rounded-xl p-2.5" style={{ background: INK }}><Send size={16} color={LIME} /></button>
+        </div>
+        {log.length > 0 && (
+          <div className="rounded-xl p-2.5 mb-2 flex flex-col gap-2" style={{ background: CARD, maxHeight: 150, overflowY: "auto" }}>
+            {log.map((e: any, i: number) => (
+              <div key={i}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{e.q}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: e.hit ? LIME_DK : e.a === "Yes" ? "#2FA36B" : e.a === "No" ? "#D6456B" : MUTED }}>→ {e.a}</div>
+              </div>
+            ))}
+            <div ref={logEnd} />
           </div>
-          <button onClick={onReveal} className="mt-2 flex items-center gap-1" style={{ fontSize: 12, color: MUTED }}><Eye size={13} /> I've got it — reveal</button>
-        </>
+        )}
+        {!revealed && (
+          <>
+            {chips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {count > 0 && <span className="px-1 py-1.5" style={{ fontSize: 11, color: LIME_DK, fontWeight: 600 }}>Dig here →</span>}
+                {chips.map((s: string, i: number) => (
+                  <button key={i} onClick={() => ask(s)} className="rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: "#3A3A40" }}>{s}</button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask(q)}
+                placeholder="ask your own yes/no question…" className="rounded-xl px-3.5 py-2.5 flex-1" style={{ border: `1px solid ${LINE}`, fontSize: 14, background: CARD }} />
+              <button onClick={() => ask(q)} className="rounded-xl p-2.5" style={{ background: INK }}><Send size={16} color={LIME} /></button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ---- panel 2 · NAME IT ---- */}
+      {!revealed && (
+        <div className="rounded-xl p-3" style={{ background: LIME + "14", border: `1px solid ${all ? LIME_DK : LINE}` }}>
+          <div className="flex items-center justify-between mb-2">
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, color: LIME_DK, textTransform: "uppercase" }}>
+              🎯 Name it
+            </span>
+            <span style={{ fontSize: 11, color: MUTED }}>wrong guesses cost −15</span>
+          </div>
+          {all && <div style={{ fontSize: 11.5, color: LIME_DK, marginBottom: 6, fontWeight: 600 }}>You've uncovered every key fact — you're ready.</div>}
+          <div className="flex items-center gap-2">
+            <input value={answer} onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder="what's really going on?" className="rounded-xl px-3.5 py-2.5 flex-1"
+              style={{ border: `1px solid ${missed ? "#D6456B" : LINE}`, fontSize: 14, background: CARD }} />
+            <button onClick={submit} className="rounded-xl px-4 py-2.5" style={{ background: INK, color: LIME, fontWeight: 600, fontSize: 13.5 }}>
+              Submit
+            </button>
+          </div>
+          {missed && (
+            <div style={{ fontSize: 12, color: "#D6456B", marginTop: 6 }}>
+              Not it (−15) — {wrongSubmits >= 2 ? "the facts you've uncovered point somewhere. Re-read them." : "keep investigating above."}
+            </div>
+          )}
+          <button onClick={onGiveUp} className="mt-2 flex items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
+            <Eye size={13} /> Show me the answer (no score)
+          </button>
+        </div>
       )}
     </div>
   );

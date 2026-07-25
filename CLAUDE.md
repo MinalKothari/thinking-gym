@@ -27,6 +27,7 @@ lib/supabase.ts      Supabase client + typed RPC helpers
 lib/types.ts         shared contract (public vs solution payloads)
 supabase/            SQL to run in the Supabase SQL editor, IN ORDER:
                        01_schema.sql → 02_seed.sql → 03_interactions.sql → 04_auth_archive.sql
+                       → 05_scoring.sql
 docs/                reference only — NOT part of the build, do not import:
                        puzzle-bank-90-day.xlsx  (90 days of puzzle content)
                        standalone-prototype.jsx (the original clickable prototype)
@@ -56,6 +57,13 @@ docs/                reference only — NOT part of the build, do not import:
 - ✅ Feature 3.5 — the Vault (Pro hook): `list_archive` (safe metadata for everyone) +
   `get_archive_puzzle` (rejects unless `profiles.is_pro`) in `04_auth_archive.sql`; locked list
   + Pro upsell sheet in `components/Vault.tsx`. Stripe (Feature 4) flips `is_pro` — no rework.
+- ✅ Feature 3.6 — scoring & ranks (`05_scoring.sql`). Server-side `compute_score`: 100 base,
+  −10/hint, −15/wrong attempt, −3/question past 5 (lateral), −2/min past 3 (cap −20), floor 5.
+  Rank = "Top X%" vs a per-puzzle `score_hist` seeded with a synthetic community that real plays
+  blend into. Lateral got a graded "Name it" answer (typed, checked vs solveWords server-side)
+  + adaptive probe chips (`payload_public.probes`), replacing the honor-system reveal.
+  Open types stay unscored (reveal-and-compare) by design. ScoreCard in DailyGame mirrors the
+  formula for display — keep in sync with `compute_score`.
 - ⏭ Feature 4 — Stripe subscription + Pro gating
 - ⏭ Feature 5 — puzzle-generation pipeline (enrich the 90-day bank into full payloads)
 - ⏭ Feature 6 — Challenges (Part 2) + the Reddit/Devvit marketing surface

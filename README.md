@@ -17,6 +17,7 @@ the deeper "Challenges", and the content pipeline come next.
    - `supabase/02_seed.sql`  (6 playable puzzles, scheduled from today)
    - `supabase/03_interactions.sql`
    - `supabase/04_auth_archive.sql`  (archive RPCs — the Pro-gated Vault)
+   - `supabase/05_scoring.sql`  (scores, ranks, graded lateral answers)
 3. **Authentication → Providers → enable "Anonymous sign-ins"** (so guests can play instantly).
 
 ### 2. Configure env

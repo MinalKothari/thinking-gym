@@ -7,7 +7,7 @@ export type PuzzleType =
 export type Op = "×" | "÷" | "+" | "−";
 
 export type PublicPayload =
-  | { kind: "lateral"; suggested: string[]; clues: { label: string }[] }
+  | { kind: "lateral"; suggested: string[]; clues: { label: string }[]; probes?: string[][] }
   | { kind: "spot_flaw"; options: string[] }
   | { kind: "fermi"; unit: string; seed: { label: string; op: Op }[] }
   | { kind: "deduction" }
@@ -26,13 +26,23 @@ export interface PublicPuzzle {
   shareLine?: string;
 }
 
-export type Guess =
-  | { choice: number; hints?: number }
-  | { text: string; hints?: number }
-  | { value: number; hints?: number }
-  | { solved: boolean; coverage?: number; angles?: number[]; hints?: number };
+/** Extra grading inputs (all types): timeMs since puzzle load; questions = oracle asks (lateral). */
+interface GuessMeta { hints?: number; timeMs?: number; questions?: number; coverage?: number }
 
-export interface CheckResult { correct: boolean }
+export type Guess =
+  | ({ choice: number } & GuessMeta)
+  | ({ text: string } & GuessMeta)
+  | ({ value: number } & GuessMeta)
+  | ({ solved: boolean; angles?: number[] } & GuessMeta);
+
+export interface CheckResult {
+  correct: boolean;
+  /** Server-computed; null for open types, give-ups, and repeat solves. */
+  score: number | null;
+  /** "Top X%" vs today's solvers (community histogram). */
+  topPct: number | null;
+  solves: number | null;
+}
 
 export interface RevealResult {
   answer: string;
@@ -43,6 +53,8 @@ export interface RevealResult {
     keyAngles?: { label: string; pct: number }[];
   };
   stats: { plays: number; solves: number; angles: Record<string, number> };
+  myScore?: number | null;
+  myTopPct?: number | null;
 }
 
 /** Safe metadata for the locked archive list — no prompt, payload, or answer. */
