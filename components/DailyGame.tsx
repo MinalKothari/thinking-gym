@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Flame, Brain, Lightbulb, Check, X, Mic, Share2, Sparkles, Send, Eye, Trophy, Plus, Target,
-  UserRound,
+  UserRound, HelpCircle,
 } from "lucide-react";
 import type { PublicPuzzle, Profile, RevealResult, AuthInfo, CheckResult } from "@/lib/types";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/supabase";
 import { SaveStreakCard, AccountSheet } from "@/components/Auth";
 import Vault from "@/components/Vault";
+import HowToSheet, { guideFor } from "@/components/HowTo";
 
 const INK = "#17171F", PAPER = "#F3F5F1", CARD = "#FFFFFF";
 const LIME = "#B4E42A", LIME_DK = "#5E7A0E", MUTED = "#6C6C77", LINE = "#E5E7E1";
@@ -33,6 +34,7 @@ export default function DailyGame() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [auth, setAuth] = useState<AuthInfo | null>(null);
   const [showAccount, setShowAccount] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);
 
   const [hintLevel, setHintLevel] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -68,6 +70,11 @@ export default function DailyGame() {
         setAuth(au);
         startRef.current = Date.now();
         if (pz && pz.payload.kind === "lateral") setClueCover(pz.payload.clues.map(() => false));
+        // First encounter with this rep type → explain how it works.
+        if (pz) {
+          const key = `tg_howto_${guideFor(pz.payload.kind)}`;
+          if (!localStorage.getItem(key)) { setShowHowTo(true); localStorage.setItem(key, "1"); }
+        }
       } catch (e) { console.error(e); }
       setLoading(false);
     })();
@@ -238,10 +245,15 @@ export default function DailyGame() {
             <span className="rounded-full px-2.5 py-1" style={{ background: "#7C6AE818", color: "#7C6AE8", fontSize: 11, fontWeight: 600 }}>
               {TYPE_NAME[puzzle.type]}
             </span>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((d) => (
-                <span key={d} style={{ width: 6, height: 6, borderRadius: 6, background: d <= puzzle.difficulty ? INK : LINE }} />
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((d) => (
+                  <span key={d} style={{ width: 6, height: 6, borderRadius: 6, background: d <= puzzle.difficulty ? INK : LINE }} />
+                ))}
+              </div>
+              <button onClick={() => setShowHowTo(true)} aria-label="How this rep works">
+                <HelpCircle size={16} color={MUTED} />
+              </button>
             </div>
           </div>
           <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: -0.4, marginBottom: 8 }}>{puzzle.title}</h2>
@@ -412,6 +424,7 @@ export default function DailyGame() {
       </div>
 
       <AccountSheet open={showAccount} onClose={() => setShowAccount(false)} auth={auth} profile={profile} />
+      {showHowTo && puzzle && <HowToSheet kind={puzzle.payload.kind} onClose={() => setShowHowTo(false)} />}
     </Shell>
   );
 }
@@ -493,6 +506,7 @@ function Center({ children }: { children: React.ReactNode }) {
 function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, onSubmitAnswer, wrongSubmits, logEnd }: any) {
   const [answer, setAnswer] = useState("");
   const [missed, setMissed] = useState(false);
+  const [sparked, setSparked] = useState(false);   // question ideas hidden until asked for
   const count = clueCover.filter(Boolean).length;
   const all = count === pay.clues.length && pay.clues.length > 0;
 
@@ -551,19 +565,27 @@ function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, o
         )}
         {!revealed && (
           <>
-            {chips.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {count > 0 && <span className="px-1 py-1.5" style={{ fontSize: 11, color: LIME_DK, fontWeight: 600 }}>Dig here →</span>}
-                {chips.map((s: string, i: number) => (
-                  <button key={i} onClick={() => ask(s)} className="rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: "#3A3A40" }}>{s}</button>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mb-2">
               <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask(q)}
                 placeholder="ask your own yes/no question…" className="rounded-xl px-3.5 py-2.5 flex-1" style={{ border: `1px solid ${LINE}`, fontSize: 14, background: CARD }} />
               <button onClick={() => ask(q)} className="rounded-xl p-2.5" style={{ background: INK }}><Send size={16} color={LIME} /></button>
             </div>
+            {/* question ideas stay hidden until asked for — the thinking is the workout */}
+            {!sparked ? (
+              <button onClick={() => setSparked(true)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5"
+                style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: MUTED, fontWeight: 500 }}>
+                <Lightbulb size={13} color={LIME_DK} /> Stuck? Spark an idea
+              </button>
+            ) : chips.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                <span className="px-1 py-1.5" style={{ fontSize: 11, color: LIME_DK, fontWeight: 600 }}>
+                  {count > 0 ? "Dig here →" : "Try asking →"}
+                </span>
+                {chips.map((s: string, i: number) => (
+                  <button key={i} onClick={() => ask(s)} className="rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: "#3A3A40" }}>{s}</button>
+                ))}
+              </div>
+            ) : null}
           </>
         )}
       </div>
