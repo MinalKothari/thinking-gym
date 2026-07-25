@@ -12,10 +12,11 @@ the deeper "Challenges", and the content pipeline come next.
 
 ### 1. Set up Supabase
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open the **SQL editor** and run these three files, in order:
+2. Open the **SQL editor** and run these four files, in order:
    - `supabase/01_schema.sql`
    - `supabase/02_seed.sql`  (6 playable puzzles, scheduled from today)
    - `supabase/03_interactions.sql`
+   - `supabase/04_auth_archive.sql`  (archive RPCs — the Pro-gated Vault)
 3. **Authentication → Providers → enable "Anonymous sign-ins"** (so guests can play instantly).
 
 ### 2. Configure env
@@ -63,5 +64,6 @@ grading, the lateral oracle, and open-type coverage all run in server-side Postg
 Never commit `.env.local`, and never put the Supabase `service_role` key in this repo.
 
 ## Roadmap
-1. ✅ Data foundation · 2. ✅ Daily loop · 3. Logins · 4. Stripe subscription · 5. Puzzle
-pipeline · 6. Challenges + Reddit/Devvit surface.
+1. ✅ Data foundation · 2. ✅ Daily loop · 3. ✅ Logins (email magic-link; Google optional) +
+the locked Vault (Pro hook) · 4. Stripe subscription · 5. Puzzle pipeline · 6. Challenges +
+Reddit/Devvit surface.

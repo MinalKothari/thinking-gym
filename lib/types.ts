@@ -45,6 +45,22 @@ export interface RevealResult {
   stats: { plays: number; solves: number; angles: Record<string, number> };
 }
 
+/** Safe metadata for the locked archive list — no prompt, payload, or answer. */
+export interface ArchiveItem {
+  id: string;
+  date: string;
+  type: PuzzleType;
+  muscle: string;
+  difficulty: number;
+  title: string;
+}
+
+export interface AuthInfo {
+  userId: string | null;
+  email: string | null;
+  isAnonymous: boolean;
+}
+
 export interface Profile {
   id: string;
   username: string | null;

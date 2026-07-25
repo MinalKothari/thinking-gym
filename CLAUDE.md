@@ -26,7 +26,7 @@ components/DailyGame.tsx   the daily-loop UI (client component)
 lib/supabase.ts      Supabase client + typed RPC helpers
 lib/types.ts         shared contract (public vs solution payloads)
 supabase/            SQL to run in the Supabase SQL editor, IN ORDER:
-                       01_schema.sql  →  02_seed.sql  →  03_interactions.sql
+                       01_schema.sql → 02_seed.sql → 03_interactions.sql → 04_auth_archive.sql
 docs/                reference only — NOT part of the build, do not import:
                        puzzle-bank-90-day.xlsx  (90 days of puzzle content)
                        standalone-prototype.jsx (the original clickable prototype)
@@ -49,7 +49,13 @@ docs/                reference only — NOT part of the build, do not import:
 ## Build status
 - ✅ Feature 1 — data foundation (schema, RLS, secure RPCs)
 - ✅ Feature 2 — daily loop wired to Supabase, server-graded
-- ⏭ Feature 3 — real logins (upgrade guest → Google / email magic-link)
+- ✅ Feature 3 — real logins. Guest → permanent via email magic-link (`updateUser`, same uid so
+  streak carries) or Google (`linkIdentity`; needs the Google provider + "manual linking" enabled
+  in Supabase — optional until configured). Post-solve "save your streak" nudge + header account
+  sheet. Sign-out drops back to a fresh guest.
+- ✅ Feature 3.5 — the Vault (Pro hook): `list_archive` (safe metadata for everyone) +
+  `get_archive_puzzle` (rejects unless `profiles.is_pro`) in `04_auth_archive.sql`; locked list
+  + Pro upsell sheet in `components/Vault.tsx`. Stripe (Feature 4) flips `is_pro` — no rework.
 - ⏭ Feature 4 — Stripe subscription + Pro gating
 - ⏭ Feature 5 — puzzle-generation pipeline (enrich the 90-day bank into full payloads)
 - ⏭ Feature 6 — Challenges (Part 2) + the Reddit/Devvit marketing surface

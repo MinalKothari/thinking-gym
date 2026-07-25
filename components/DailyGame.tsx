@@ -2,11 +2,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Flame, Brain, Lightbulb, Check, X, Mic, Share2, Sparkles, Send, Eye, Trophy, Plus, Target,
+  UserRound,
 } from "lucide-react";
-import type { PublicPuzzle, Profile, RevealResult } from "@/lib/types";
+import type { PublicPuzzle, Profile, RevealResult, AuthInfo } from "@/lib/types";
 import {
   ensureGuest, getTodayPuzzle, getProfile, askOracle, matchAngles, checkDaily, revealPuzzle,
+  getAuthInfo, onAuthChange,
 } from "@/lib/supabase";
+import { SaveStreakCard, AccountSheet } from "@/components/Auth";
+import Vault from "@/components/Vault";
 
 const INK = "#17171F", PAPER = "#F3F5F1", CARD = "#FFFFFF";
 const LIME = "#B4E42A", LIME_DK = "#5E7A0E", MUTED = "#6C6C77", LINE = "#E5E7E1";
@@ -27,6 +31,8 @@ export default function DailyGame() {
   const [loading, setLoading] = useState(true);
   const [puzzle, setPuzzle] = useState<PublicPuzzle | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [auth, setAuth] = useState<AuthInfo | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
 
   const [hintLevel, setHintLevel] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -53,13 +59,21 @@ export default function DailyGame() {
     (async () => {
       try {
         await ensureGuest();
-        const [pz, pr] = await Promise.all([getTodayPuzzle(), getProfile()]);
+        const [pz, pr, au] = await Promise.all([getTodayPuzzle(), getProfile(), getAuthInfo()]);
         setPuzzle(pz);
         setProfile(pr);
+        setAuth(au);
         if (pz && pz.payload.kind === "lateral") setClueCover(pz.payload.clues.map(() => false));
       } catch (e) { console.error(e); }
       setLoading(false);
     })();
+    // Refresh identity + streak when a magic link / OAuth redirect lands or the user signs out.
+    return onAuthChange(async () => {
+      const au = await getAuthInfo();
+      if (!au.userId) { await ensureGuest(); return; }   // signed out → new guest (fires again)
+      setAuth(au);
+      setProfile(await getProfile());
+    });
   }, []);
 
   useEffect(() => { logEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [log]);
@@ -172,9 +186,15 @@ export default function DailyGame() {
               <div style={{ fontSize: 11, color: MUTED, marginTop: -2 }}>Today's rep</div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: CARD, border: `1px solid ${LINE}` }}>
-            <Flame size={16} color={LIME_DK} fill={LIME} />
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{profile?.currentStreak ?? 0}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: CARD, border: `1px solid ${LINE}` }}>
+              <Flame size={16} color={LIME_DK} fill={LIME} />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{profile?.currentStreak ?? 0}</span>
+            </div>
+            <button onClick={() => setShowAccount(true)} className="rounded-full p-2"
+              style={{ background: auth?.email ? INK : CARD, border: `1px solid ${auth?.email ? INK : LINE}` }}>
+              <UserRound size={16} color={auth?.email ? LIME : MUTED} />
+            </button>
           </div>
         </div>
 
@@ -336,7 +356,17 @@ export default function DailyGame() {
             </div>
           </div>
         )}
+
+        {/* save-your-streak nudge — guests only, at the moment it matters */}
+        {isSolved && auth?.isAnonymous && (
+          <SaveStreakCard streak={profile?.currentStreak ?? 0} onSignIn={() => setShowAccount(true)} />
+        )}
+
+        {/* the Pro hook — locked archive of past reps */}
+        <Vault />
       </div>
+
+      <AccountSheet open={showAccount} onClose={() => setShowAccount(false)} auth={auth} profile={profile} />
     </Shell>
   );
 }

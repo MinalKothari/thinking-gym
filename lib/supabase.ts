@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
-import type { PublicPuzzle, Guess, CheckResult, RevealResult, Profile } from "@/lib/types";
+import type {
+  PublicPuzzle, Guess, CheckResult, RevealResult, Profile, ArchiveItem, AuthInfo,
+} from "@/lib/types";
 
 export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,4 +74,76 @@ export async function revealPuzzle(puzzleId: string): Promise<RevealResult> {
   const { data, error } = await supabase.rpc("reveal_puzzle", { p_puzzle_id: puzzleId });
   if (error) throw error;
   return data as RevealResult;
+}
+
+// ---------- Feature 3: real logins (upgrade guest → permanent account) ----------
+
+export async function getAuthInfo(): Promise<AuthInfo> {
+  const { data } = await supabase.auth.getUser();
+  const u = data.user;
+  return {
+    userId: u?.id ?? null,
+    email: u?.email || null,
+    isAnonymous: Boolean((u as { is_anonymous?: boolean } | null)?.is_anonymous),
+  };
+}
+
+/**
+ * Upgrade the CURRENT anonymous user by attaching an email — same uid, so the
+ * streak and history carry over. Supabase emails a confirmation link.
+ */
+export async function saveWithEmail(email: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser(
+    { email },
+    { emailRedirectTo: window.location.origin }
+  );
+  if (error) throw error;
+}
+
+/** Returning user on a new device — email magic link (switches to that account). */
+export async function signInWithEmail(email: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin },
+  });
+  if (error) throw error;
+}
+
+/**
+ * Google OAuth. When the current user is an anonymous guest we LINK the Google
+ * identity (same uid → streak preserved); otherwise it's a normal sign-in.
+ * Requires the Google provider (and "manual linking") enabled in Supabase.
+ */
+export async function continueWithGoogle(upgradeGuest: boolean): Promise<void> {
+  const options = { redirectTo: window.location.origin };
+  const { error } = upgradeGuest
+    ? await supabase.auth.linkIdentity({ provider: "google", options })
+    : await supabase.auth.signInWithOAuth({ provider: "google", options });
+  if (error) throw error;
+}
+
+export async function signOutUser(): Promise<void> {
+  await supabase.auth.signOut();
+}
+
+/** Re-render on any auth change (magic-link return, OAuth return, sign-out). */
+export function onAuthChange(cb: () => void): () => void {
+  const { data } = supabase.auth.onAuthStateChange(() => cb());
+  return () => data.subscription.unsubscribe();
+}
+
+// ---------- Archive (the Pro hook) ----------
+
+/** Past puzzles, metadata only — safe for everyone; used for the locked list. */
+export async function listArchive(): Promise<ArchiveItem[]> {
+  const { data, error } = await supabase.rpc("list_archive");
+  if (error) throw error;
+  return (data as ArchiveItem[]) ?? [];
+}
+
+/** Full past puzzle — server rejects unless profiles.is_pro (Feature 4 unlocks). */
+export async function getArchivePuzzle(puzzleId: string): Promise<PublicPuzzle | null> {
+  const { data, error } = await supabase.rpc("get_archive_puzzle", { p_puzzle_id: puzzleId });
+  if (error) throw error;
+  return data as PublicPuzzle | null;
 }
