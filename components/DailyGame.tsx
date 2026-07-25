@@ -35,6 +35,7 @@ export default function DailyGame() {
   const [auth, setAuth] = useState<AuthInfo | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
+  const [showScore, setShowScore] = useState(false);
 
   const [hintLevel, setHintLevel] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -128,6 +129,7 @@ export default function DailyGame() {
       setResult(res);
       setLastCorrect(true);
       await doReveal();
+      if (res.score != null) setShowScore(true);
       return true;
     }
     setWrongSubmits((w) => w + 1);
@@ -150,6 +152,7 @@ export default function DailyGame() {
     setLastCorrect(res.correct);
     if (res.correct) setResult(res);
     await doReveal();
+    if (res.correct && res.score != null) setShowScore(true);
   }
 
   // ---- fermi ----
@@ -161,6 +164,7 @@ export default function DailyGame() {
     setLastCorrect(res.correct);
     if (res.correct) setResult(res);
     await doReveal();
+    if (res.correct && res.score != null) setShowScore(true);
   }
 
   // ---- deduction ----
@@ -169,8 +173,11 @@ export default function DailyGame() {
     const res = await checkDaily(puzzle.id, { text: guess, ...meta() });
     setLocked(true);
     setLastCorrect(res.correct);
-    if (res.correct) { setResult(res); await doReveal(); }
-    else setWrongSubmits((w) => w + 1);
+    if (res.correct) {
+      setResult(res);
+      await doReveal();
+      if (res.score != null) setShowScore(true);
+    } else setWrongSubmits((w) => w + 1);
   }
   async function deductionGiveUp() {
     if (!puzzle) return;
@@ -425,6 +432,35 @@ export default function DailyGame() {
 
       <AccountSheet open={showAccount} onClose={() => setShowAccount(false)} auth={auth} profile={profile} />
       {showHowTo && puzzle && <HowToSheet kind={puzzle.payload.kind} onClose={() => setShowHowTo(false)} />}
+
+      {/* the payoff moment — pops the instant a scored solve lands */}
+      {showScore && finalScore != null && (
+        <div onClick={() => setShowScore(false)} className="fixed inset-0 flex items-end sm:items-center justify-center"
+          style={{ background: "#17171FCC", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full p-4 sm:p-0" style={{ maxWidth: 440 }}>
+            <div style={{ textAlign: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 34 }}>🎉</span>
+              <div style={{ color: "#EDEDEA", fontSize: 17, fontWeight: 700 }}>Solved it.</div>
+            </div>
+            <ScoreCard
+              score={finalScore} topPct={finalTopPct} solves={solvesToday}
+              hints={hintLevel} wrong={wrongSubmits}
+              questions={pay.kind === "lateral" ? log.length : 0}
+              timeMs={Date.now() - startRef.current}
+            />
+            <div className="flex items-center gap-2 mt-3">
+              <button onClick={copyShare} className="flex-1 flex items-center justify-center gap-1.5 rounded-xl px-4 py-3"
+                style={{ background: LIME, color: INK, fontWeight: 700, fontSize: 14 }}>
+                <Share2 size={15} /> {copied ? "Copied!" : "Share your rank"}
+              </button>
+              <button onClick={() => setShowScore(false)} className="rounded-xl px-4 py-3"
+                style={{ background: "#2B2B36", color: "#EDEDEA", fontWeight: 600, fontSize: 14 }}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }
@@ -507,6 +543,7 @@ function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, o
   const [answer, setAnswer] = useState("");
   const [missed, setMissed] = useState(false);
   const [sparked, setSparked] = useState(false);   // question ideas hidden until asked for
+  const [naming, setNaming] = useState(false);     // one panel, two modes: investigate ↔ name it
   const count = clueCover.filter(Boolean).length;
   const all = count === pay.clues.length && pay.clues.length > 0;
 
@@ -530,13 +567,12 @@ function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, o
 
   return (
     <div>
-      {/* ---- panel 1 · INVESTIGATE ---- */}
-      <div className="rounded-xl p-3 mb-2.5" style={{ background: PAPER, border: `1px solid ${LINE}` }}>
+      <div className="rounded-xl p-3" style={{ background: naming ? LIME + "14" : PAPER, border: `1px solid ${naming ? LIME_DK : LINE}` }}>
         <div className="flex items-center justify-between mb-2">
-          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, color: "#4A4A52", textTransform: "uppercase" }}>
-            🔎 Investigate
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, color: naming ? LIME_DK : "#4A4A52", textTransform: "uppercase" }}>
+            {naming ? "🎯 Name it" : "🔎 Investigate"}
           </span>
-          <span style={{ fontSize: 11, color: MUTED }}>yes/no questions · first 5 free</span>
+          <span style={{ fontSize: 11, color: MUTED }}>{naming ? "wrong guesses −15" : "yes/no questions · first 5 free"}</span>
         </div>
         <div className="rounded-xl px-3 py-2.5 mb-2" style={{ background: CARD }}>
           <div className="flex items-center justify-between mb-1.5">
@@ -563,21 +599,29 @@ function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, o
             <div ref={logEnd} />
           </div>
         )}
-        {!revealed && (
+        {!revealed && !naming && (
           <>
             <div className="flex items-center gap-2 mb-2">
               <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask(q)}
-                placeholder="ask your own yes/no question…" className="rounded-xl px-3.5 py-2.5 flex-1" style={{ border: `1px solid ${LINE}`, fontSize: 14, background: CARD }} />
+                placeholder="ask your own yes/no question…" className="rounded-xl px-3.5 py-2.5 flex-1 min-w-0" style={{ border: `1px solid ${LINE}`, fontSize: 14, background: CARD }} />
               <button onClick={() => ask(q)} className="rounded-xl p-2.5" style={{ background: INK }}><Send size={16} color={LIME} /></button>
             </div>
-            {/* question ideas stay hidden until asked for — the thinking is the workout */}
-            {!sparked ? (
-              <button onClick={() => setSparked(true)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5"
-                style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: MUTED, fontWeight: 500 }}>
-                <Lightbulb size={13} color={LIME_DK} /> Stuck? Spark an idea
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              {/* question ideas stay hidden until asked for — the thinking is the workout */}
+              {!sparked ? (
+                <button onClick={() => setSparked(true)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5"
+                  style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: MUTED, fontWeight: 500 }}>
+                  <Lightbulb size={13} color={LIME_DK} /> Stuck?
+                </button>
+              ) : <span />}
+              <button onClick={() => { setNaming(true); setMissed(false); }}
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5"
+                style={{ background: all ? LIME : INK, color: all ? INK : LIME, fontSize: 12, fontWeight: 700 }}>
+                🎯 I've got it{all ? " — you're ready" : ""}
               </button>
-            ) : chips.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
+            </div>
+            {sparked && chips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
                 <span className="px-1 py-1.5" style={{ fontSize: 11, color: LIME_DK, fontWeight: 600 }}>
                   {count > 0 ? "Dig here →" : "Try asking →"}
                 </span>
@@ -585,40 +629,37 @@ function LateralInput({ pay, log, q, setQ, ask, clueCover, revealed, onGiveUp, o
                   <button key={i} onClick={() => ask(s)} className="rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, background: CARD, fontSize: 12, color: "#3A3A40" }}>{s}</button>
                 ))}
               </div>
-            ) : null}
+            )}
+          </>
+        )}
+
+        {!revealed && naming && (
+          <>
+            <div className="flex items-center gap-2">
+              <input value={answer} autoFocus onChange={(e) => setAnswer(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="what's really going on?" className="rounded-xl px-3.5 py-2.5 flex-1 min-w-0"
+                style={{ border: `1px solid ${missed ? "#D6456B" : LINE}`, fontSize: 14, background: CARD }} />
+              <button onClick={submit} className="rounded-xl px-4 py-2.5" style={{ background: INK, color: LIME, fontWeight: 600, fontSize: 13.5 }}>
+                Submit
+              </button>
+            </div>
+            {missed && (
+              <div style={{ fontSize: 12, color: "#D6456B", marginTop: 6 }}>
+                Not it (−15) — {wrongSubmits >= 2 ? "the facts you've found point somewhere. Re-read them." : "keep investigating."}
+              </div>
+            )}
+            <div className="flex items-center justify-between mt-2.5">
+              <button onClick={() => setNaming(false)} style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>
+                ← back to questions
+              </button>
+              <button onClick={onGiveUp} className="flex items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
+                <Eye size={13} /> Reveal (no score)
+              </button>
+            </div>
           </>
         )}
       </div>
-
-      {/* ---- panel 2 · NAME IT ---- */}
-      {!revealed && (
-        <div className="rounded-xl p-3" style={{ background: LIME + "14", border: `1px solid ${all ? LIME_DK : LINE}` }}>
-          <div className="flex items-center justify-between mb-2">
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.8, color: LIME_DK, textTransform: "uppercase" }}>
-              🎯 Name it
-            </span>
-            <span style={{ fontSize: 11, color: MUTED }}>wrong guesses cost −15</span>
-          </div>
-          {all && <div style={{ fontSize: 11.5, color: LIME_DK, marginBottom: 6, fontWeight: 600 }}>You've uncovered every key fact — you're ready.</div>}
-          <div className="flex items-center gap-2">
-            <input value={answer} onChange={(e) => setAnswer(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="what's really going on?" className="rounded-xl px-3.5 py-2.5 flex-1"
-              style={{ border: `1px solid ${missed ? "#D6456B" : LINE}`, fontSize: 14, background: CARD }} />
-            <button onClick={submit} className="rounded-xl px-4 py-2.5" style={{ background: INK, color: LIME, fontWeight: 600, fontSize: 13.5 }}>
-              Submit
-            </button>
-          </div>
-          {missed && (
-            <div style={{ fontSize: 12, color: "#D6456B", marginTop: 6 }}>
-              Not it (−15) — {wrongSubmits >= 2 ? "the facts you've uncovered point somewhere. Re-read them." : "keep investigating above."}
-            </div>
-          )}
-          <button onClick={onGiveUp} className="mt-2 flex items-center gap-1" style={{ fontSize: 12, color: MUTED }}>
-            <Eye size={13} /> Show me the answer (no score)
-          </button>
-        </div>
-      )}
     </div>
   );
 }

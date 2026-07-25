@@ -3,50 +3,50 @@ import React from "react";
 import { X, Search, Target, Lightbulb, ListChecks, Calculator, MessageCircleQuestion, Layers } from "lucide-react";
 import { INK, CARD, LIME, LIME_DK, MUTED, LINE, PAPER } from "@/lib/theme";
 
-const SCORING = "Start at 100. Hints and wrong guesses cost points — a clean solve is the flex.";
+const SCORING = "Start at 100 · hints −10 · wrong guesses −15.";
 
 const GUIDES: Record<string, { title: string; steps: { icon: React.ReactNode; text: string }[]; scoring: string }> = {
   lateral: {
     title: "How this rep works",
     steps: [
-      { icon: <Search size={15} />, text: "Something strange happened. Interrogate it with yes/no questions — the meter shows how many key facts you've uncovered." },
-      { icon: <Lightbulb size={15} />, text: "Stuck? The 💡 button offers question ideas. Using them is free — but the thinking is the workout." },
-      { icon: <Target size={15} />, text: "When you see it, name it in the answer box. Wrong guesses cost −15, so don't fish." },
+      { icon: <Search size={15} />, text: "Ask yes/no questions — uncover the 3 key facts." },
+      { icon: <Lightbulb size={15} />, text: "Stuck? 💡 gives free question ideas." },
+      { icon: <Target size={15} />, text: "See it? Name it. Wrong guesses −15." },
     ],
-    scoring: "Start at 100. Wrong guesses −15 · questions beyond the first 5 −3 each · slow solves lose a little. Clean and quick = top of the pack.",
+    scoring: "Start at 100 · wrong guesses −15 · extra questions −3.",
   },
   spot_flaw: {
     title: "How this rep works",
     steps: [
-      { icon: <MessageCircleQuestion size={15} />, text: "Read the argument. It sounds convincing — something is broken in it." },
-      { icon: <ListChecks size={15} />, text: "Pick the option that names the real flaw. One shot, so reason before you tap." },
+      { icon: <MessageCircleQuestion size={15} />, text: "The argument sounds right — it isn't." },
+      { icon: <ListChecks size={15} />, text: "Pick the real flaw. One shot." },
     ],
     scoring: SCORING,
   },
   fermi: {
     title: "How this rep works",
     steps: [
-      { icon: <Calculator size={15} />, text: "Estimate the unestimatable by breaking it into steps you can guess — the scratchpad chains them and does the maths." },
-      { icon: <Target size={15} />, text: "Lock in your estimate. Landing within 10× of the true number counts as a solve — the reasoning path is the win." },
+      { icon: <Calculator size={15} />, text: "Break the big number into steps you can guess." },
+      { icon: <Target size={15} />, text: "Within 10× of the truth = solved." },
     ],
     scoring: SCORING,
   },
   deduction: {
     title: "How this rep works",
     steps: [
-      { icon: <MessageCircleQuestion size={15} />, text: "A tight logic riddle with exactly one answer." },
-      { icon: <Target size={15} />, text: "Type it when you've got it. Wrong tries cost points; hints are there if you need a nudge." },
+      { icon: <MessageCircleQuestion size={15} />, text: "One riddle, one answer." },
+      { icon: <Target size={15} />, text: "Type it when you've got it." },
     ],
     scoring: SCORING,
   },
   open: {
     title: "How this rep works",
     steps: [
-      { icon: <Layers size={15} />, text: "No single right answer here — the rep is finding the angles others miss. Jot short thoughts, tap lenses to steer." },
-      { icon: <Search size={15} />, text: "The meter shows how much of the picture you've surfaced — coverage, not correctness." },
-      { icon: <Target size={15} />, text: "Then compare with how experts and the community saw it. That comparison is the payoff." },
+      { icon: <Layers size={15} />, text: "No right answer — find angles others miss." },
+      { icon: <Search size={15} />, text: "Short jots. The meter = coverage, not grades." },
+      { icon: <Target size={15} />, text: "Reveal to compare with experts & the crowd." },
     ],
-    scoring: "Open reps aren't scored — your words are never graded. The win is coverage: how many angles you found before the reveal.",
+    scoring: "Open reps aren't scored — coverage is the win.",
   },
 };
 
